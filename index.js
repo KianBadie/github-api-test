@@ -23,7 +23,6 @@ var github = {
           name: project.name,
           languages: { url: project.languages_url, data: [] },
           contributors: { url: project.contributors_url, data: [] },
-          issues: { url: project.issues_url.substring(0, project.issues_url.length-9), data: [] },
           comments: {url: project.issue_comment_url.substring(0, project.issue_comment_url.length-9), data: []}
         });
       });
@@ -180,12 +179,14 @@ var github = {
       let result = [];
       for(comment of body){
         let { url, issue_url, id, user } = comment;
-        let { login: user_login, avatar_url: user_avatar_url, url: user_url, gravatar_id, html_url } = user;
+        //Wierd bug happening wwhen adding "id: user_id" 
+        let { id: user_id, login: user_login, avatar_url: user_avatar_url, url: user_url, gravatar_id, html_url } = user;
         result.push({
           url,
           issue_url,
           id,
           user: {
+            user_id,
             user_login,
             user_avatar_url,
             user_url,
@@ -198,6 +199,52 @@ var github = {
     }).catch(function(err){
       return err.message;
     });
+  },
+  getCommenters: function(comments){
+    if(comments == "Cannot read property 'split' of undefined"){ return }
+    let commenters = {};
+    for(comment of comments){
+      let { user } = comment;
+      if(user.user_login in commenters){
+        commenters[user.user_login].total+= 1 
+      }
+      else{
+        commenters[user.user_login] = {
+          'total': 1,
+          'id': user.user_id,
+          'github_url': user.html_url,
+          'avatar_url': user.user_avatar_url,
+          'gravatar_id': user.gravatar_id
+        }
+      }
+    }
+
+    // Build an array from the commenters data
+    let commentersArray = [];
+    for(commenter in commenters){
+      let commenterObj = {
+        "login": commenter,
+        "total": commenters[commenter].total,
+        "id": commenters[commenter].id,
+        "github_url": commenters[commenter].github_url,
+        "avatar_url": commenters[commenter].avatar_url,
+        "gravatar_id": commenters[commenter].gravatar_id
+      }
+      commentersArray.push(commenterObj);
+    }
+    commentersArray.sort(function(a, b){
+      if(a.total < b.total){
+        return 1;
+      }
+      else if (a.total > b.total){
+        return -1;
+      }
+      return 0;
+    });
+    return {
+      totalCommenters: Object.keys(commenters).length,
+      data: commentersArray
+    };
   }
 }
 
@@ -209,12 +256,10 @@ async function main(params) {
   await github.getAllTaggedRepos();
   let lps = [], ldone = false
   let cps = [], cdone = false
-  let ips = [], idone = false
   let icps = [], icdone = false
   for (i = 0; i < github.apiData.length; i++) {
     lps.push(github.getLanguageInfo(github.apiData[i].languages.url));
     cps.push(github.getContributorsInfo(github.apiData[i].contributors.url));
-    // ips.push(github.getIssues(github.apiData[i].issues.url));
     icps.push(github.getComments(github.apiData[i].comments.url));
   }
   Promise.all(lps)
@@ -239,20 +284,11 @@ async function main(params) {
     .catch(function(e) {
       console.log(e)
     });
-//  Promise.all(ips)
-//     .then(function(is) {
-//       for (i = 0; i < is.length; i++) {
-//         github.apiData[i].issues.data = is[i];
-//       }
-//       finish()
-//     })
-//     .catch(function(e) {
-//       console.log(e)
-//     });
  Promise.all(icps)
     .then(function(ics){
       for (i = 0; i < ics.length; i++) {
         github.apiData[i].comments.data = ics[i];
+        github.apiData[i].commenters = github.getCommenters(ics[i]);
       }
       finish()
     })
@@ -265,7 +301,24 @@ async function main(params) {
   }
 }
 
+async function test(params) {
+  console.log('in async function test');
+  github.token = params.token;
+  github.userAgent = params.agent;
+
+  let data = JSON.parse(fs.readFileSync('github-data.json', 'utf8'));
+  for (i = 0; i < data.length; i++) {
+    let commentersData = github.getCommenters(data[i].comments.data);
+    data[i].commenters = commentersData;
+  }
+  fs.writeFileSync('test-data.json', JSON.stringify(data, null, 2));
+}
+
 let token = process.env.token;
+// test({ 
+//     'token': token,
+//     'agent': 'KianBadie' 
+// });
 main({ 
     'token': token,
     'agent': 'KianBadie' 
