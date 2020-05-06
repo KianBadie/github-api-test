@@ -72,69 +72,6 @@ var github = {
         return err.message;
     });
   },
-  getIssues: function(url){
-    return request({
-      "method": "GET",
-      "uri": url + "?state=all",
-      "json": true,
-      "resolveWithFullResponse": true,
-      "headers": {
-        "Authorization": "token " + github.token,
-        "User-Agent": github.userAgent
-      }
-    }).then(async function(response){
-      // Get the total amount of pages in the response
-      let issues = [];
-      let links = response.headers.link.split(",");
-      let lastPageString = links[1]; // NEED TO CHECK WHAT HAPPENS IF THERE IS ONLY ONE PAGE
-      let lastPageTrim = lastPageString.split(";")[0].trim();
-      let lastPageUrl = lastPageTrim.substring(1, lastPageTrim.length - 1);
-      let parsed = querystring.parse(lastPageUrl, "&", "=");
-      let lastPage = parsed.page;
-      // Loop through every page possible in response
-      for(i = 1; i <= lastPage; i++){
-        let url = `${response.request.href}&page=${i}`;
-        issues = issues.concat(github.getIssuesHelper(url));
-      }
-      return Promise.all(issues).then(function(result){
-        return [].concat.apply([], result);
-      });
-    }).catch(function(err){
-      return err.message;
-    });
-  },
-  getIssuesHelper: function(url){
-    return request({
-      "method": "GET",
-      "uri": url,
-      "json": true,
-      "headers": {
-        "Authorization": "token " + github.token,
-        "User-Agent": github.userAgent
-      }
-    }).then(function(body){
-      let result = [];
-      for(issue of body){
-        let { url, comments_url, id, number, user, comments } = issue;
-        let { login: user_login, avatar_url: user_avatar_url, url: user_url } = user;
-        result.push({
-          url,
-          comments_url,
-          id,
-          number,
-          user: {
-            user_login,
-            user_avatar_url,
-            user_url
-          },
-          comments
-        });
-      }
-      return Promise.resolve(result);
-    }).catch(function(err){
-      return err.message;
-    });
-  },
   getComments: function(url){
     return request({
       "method": "GET",
@@ -178,8 +115,7 @@ var github = {
     }).then(function(body){
       let result = [];
       for(comment of body){
-        let { url, issue_url, id, user } = comment;
-        //Wierd bug happening wwhen adding "id: user_id" 
+        let { url, issue_url, id, user } = comment; 
         let { id: user_id, login: user_login, avatar_url: user_avatar_url, url: user_url, gravatar_id, html_url } = user;
         result.push({
           url,
@@ -201,50 +137,55 @@ var github = {
     });
   },
   getCommenters: function(comments){
-    if(comments == "Cannot read property 'split' of undefined"){ return }
-    let commenters = {};
-    for(comment of comments){
-      let { user } = comment;
-      if(user.user_login in commenters){
-        commenters[user.user_login].total+= 1 
-      }
-      else{
-        commenters[user.user_login] = {
-          'total': 1,
-          'id': user.user_id,
-          'github_url': user.html_url,
-          'avatar_url': user.user_avatar_url,
-          'gravatar_id': user.gravatar_id
+    try{
+      if(comments == "Cannot read property 'split' of undefined"){ return }
+      let commenters = {};
+      for(comment of comments){
+        let { user } = comment;
+        if(user.user_login in commenters){
+          commenters[user.user_login].total+= 1 
+        }
+        else{
+          commenters[user.user_login] = {
+            'total': 1,
+            'id': user.user_id,
+            'github_url': user.html_url,
+            'avatar_url': user.user_avatar_url,
+            'gravatar_id': user.gravatar_id
+          }
         }
       }
-    }
 
-    // Build an array from the commenters data
-    let commentersArray = [];
-    for(commenter in commenters){
-      let commenterObj = {
-        "login": commenter,
-        "total": commenters[commenter].total,
-        "id": commenters[commenter].id,
-        "github_url": commenters[commenter].github_url,
-        "avatar_url": commenters[commenter].avatar_url,
-        "gravatar_id": commenters[commenter].gravatar_id
+      // Build an array from the commenters data
+      let commentersArray = [];
+      for(commenter in commenters){
+        let commenterObj = {
+          "login": commenter,
+          "total": commenters[commenter].total,
+          "id": commenters[commenter].id,
+          "github_url": commenters[commenter].github_url,
+          "avatar_url": commenters[commenter].avatar_url,
+          "gravatar_id": commenters[commenter].gravatar_id
+        }
+        commentersArray.push(commenterObj);
       }
-      commentersArray.push(commenterObj);
+      commentersArray.sort(function(a, b){
+        if(a.total < b.total){
+          return 1;
+        }
+        else if (a.total > b.total){
+          return -1;
+        }
+        return 0;
+      });
+      return {
+        totalCommenters: Object.keys(commenters).length,
+        data: commentersArray
+      };
+    }catch(err){
+      fs.writeFileSync('error.json', JSON.stringify(comments, null, 2));
+      throw err.message;
     }
-    commentersArray.sort(function(a, b){
-      if(a.total < b.total){
-        return 1;
-      }
-      else if (a.total > b.total){
-        return -1;
-      }
-      return 0;
-    });
-    return {
-      totalCommenters: Object.keys(commenters).length,
-      data: commentersArray
-    };
   }
 }
 
@@ -254,6 +195,7 @@ async function main(params) {
   github.userAgent = params.agent;
 
   await github.getAllTaggedRepos();
+  console.log("Repo's fetched");
   let lps = [], ldone = false
   let cps = [], cdone = false
   let icps = [], icdone = false
@@ -268,7 +210,8 @@ async function main(params) {
         github.apiData[i].languages.data = ls[i]
       }
       ldone = true
-      if (cdone) finish()
+      console.log('All languages data processed');
+      if (cdone && icdone) finish()
     })
     .catch(function(e) {
       console.log(e)
@@ -278,8 +221,9 @@ async function main(params) {
       for (i = 0; i < cs.length; i++) {
         github.apiData[i].contributors.data = cs[i]
       }
+      console.log('All contributors data processed');
       cdone = true
-      if (ldone) finish()
+      if (ldone && icdone) finish()
     })
     .catch(function(e) {
       console.log(e)
@@ -290,35 +234,32 @@ async function main(params) {
         github.apiData[i].comments.data = ics[i];
         github.apiData[i].commenters = github.getCommenters(ics[i]);
       }
-      finish()
+      console.log('All Comments and Commenter data processed');
+      icdone = true
+      if (ldone && cdone) finish()
     })
     .catch(function(e){
       console.log(e);
     });
 
-  function finish(){
+  async function finish(){
+    let rateData = await request({
+      "method": "GET",
+      "uri": "https://api.github.com/rate_limit",
+      "json": true,
+      "headers": {
+        "Authorization": "token " + github.token,
+        "User-Agent": github.userAgent
+      }
+    }).then(function(response){
+      return response;
+    });
+    console.log(rateData);
     fs.writeFileSync('github-data.json', JSON.stringify(github.apiData, null, 2));
   }
 }
 
-async function test(params) {
-  console.log('in async function test');
-  github.token = params.token;
-  github.userAgent = params.agent;
-
-  let data = JSON.parse(fs.readFileSync('github-data.json', 'utf8'));
-  for (i = 0; i < data.length; i++) {
-    let commentersData = github.getCommenters(data[i].comments.data);
-    data[i].commenters = commentersData;
-  }
-  fs.writeFileSync('test-data.json', JSON.stringify(data, null, 2));
-}
-
 let token = process.env.token;
-// test({ 
-//     'token': token,
-//     'agent': 'KianBadie' 
-// });
 main({ 
     'token': token,
     'agent': 'KianBadie' 
