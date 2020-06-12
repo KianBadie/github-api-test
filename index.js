@@ -23,7 +23,8 @@ var github = {
           name: project.name,
           languages: { url: project.languages_url, data: [] },
           contributors: { url: [project.contributors_url], data: [] },
-          repoEndpoint: project.url
+          repoEndpoint: project.url,
+          issueComments: {url: project.issue_comment_url.substring(0, project.issue_comment_url.length-9), data: []}
         });
       });
     }).catch(function(err) {
@@ -55,7 +56,8 @@ var github = {
             name: body.name,
             languages: { url: body.languages_url, data: [] },
             contributors: { url: [body.contributors_url], data: [] },
-            repoEndpoint: body.url
+            repoEndpoint: body.url,
+            issueComments: {url: project.issue_comment_url.substring(0, project.issue_comment_url.length-9), data: []}
           });
         }).catch(function(err){
           return err.message;
@@ -166,6 +168,36 @@ var github = {
     }).catch(function(err) {
       return err.message;
     });
+  },
+  getRecentIssueComments: function(url) {
+    // Get date 24 hours ago
+    let date = new Date();
+    date.setDate(date.getDate() - 1);
+    return request({
+      "method": "GET",
+      "uri": `${url}?since=${date.toISOString()}`,
+      "json": true,
+      "headers": {
+        "Authorization": "token " + github.token,
+        "User-Agent": github.agent
+      }
+    }).then(function(body) {
+      // return a list of commenters
+      let commenters = [];
+      body.forEach(function(comment) {
+        commenters.push({
+          "login": comment.user.login,
+          "user_id": comment.user.id,
+          "issue_url": comment.issue_url,
+          "issue_id": comment.id,
+          "created_at": comment.created_at,
+          "updated_at": comment.updated_at
+        });
+      });
+      return Promise.resolve(commenters);
+    }).catch(function(err) {
+      return err.message;
+    });
   }
 }
 
@@ -181,9 +213,13 @@ async function main(params) {
   let lps = [], ldone = false
   let cps = []
   let clps = [], cdone = false // Clps represents Contributor Links Promises, which is the array of promises that will result in arrays of contributor links for projects under a different org. cdone represents the whole process of getting contributors being done
+  
+  let cmps = [], cmdone = false
+
   for (i = 0; i < github.apiData.length; i++) {
     lps.push(github.getLanguageInfo(github.apiData[i].languages.url));
     clps.push(github.getMoreContributorLinks(github.apiData[i].repoEndpoint)); // Fetch all possible contributor links first before fetching contributor data
+    cmps.push(github.getRecentIssueComments(github.apiData[i].issueComments.url));
   }
   // Get language data
   Promise.all(lps)
@@ -192,7 +228,7 @@ async function main(params) {
         github.apiData[i].languages.data = ls[i]
       }
       ldone = true
-      if (cdone) {
+      if (cdone && cmdone) {
         console.log('Calling finish in languages work');
         finish();
       }
@@ -253,7 +289,7 @@ async function main(params) {
     })
     .then(function(promises) {
       cdone = true;
-      if (ldone) {
+      if (ldone && cmdone) {
         console.log('Calling finish in Contributors work');
         finish();
       }
@@ -261,9 +297,24 @@ async function main(params) {
     .catch(function(e) {
       return e.message;
     });
+  // Get recent repo issue comments
+  Promise.all(cmps)
+    .then(function(cs){
+      for (i = 0; i < cs.length; i++) {
+        github.apiData[i].issueComments.data = cs[i]
+      }
+      cmdone = true
+      if (ldone & cdone) {
+        console.log('Calling finish in issue comments work');
+        finish();
+      }
+    })
+    .catch(function(e){
+      console.log(e)
+    });
   function finish(){
     let output = github.apiData.sort(github.compareValues('id'));
-    console.log(JSON.stringify(output, null, 2));
+    // console.log(JSON.stringify(output, null, 2));
     fs.writeFileSync('github-data.json', JSON.stringify(output, null, 2));
   }
 }
