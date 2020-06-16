@@ -157,7 +157,7 @@ async function main(params) {
 
   function finish(){
     console.log('In finish');
-    fs.writeFileSync('all-comments-data.json', JSON.stringify(github.apiData, null, 2));
+    fs.writeFileSync('github-data.json', JSON.stringify(github.apiData, null, 2));
   }
 }
 
