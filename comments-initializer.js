@@ -145,7 +145,9 @@ async function main(params) {
   Promise.all(issueCommentPromises)
     .then(function(issueComments){
       for (i = 0; i < issueComments.length; i++) {
-        github.apiData[i].issueComments.allComments = github.parseComments(issueComments[i]);
+        parsedComments = github.parseComments(issueComments[i]);
+        github.apiData[i].issueComments.totalCommenters = parsedComments.totalCommenters;
+        github.apiData[i].issueComments.data = parsedComments.data;
       }
       finish();
     })
