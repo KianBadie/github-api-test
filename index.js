@@ -132,7 +132,7 @@ var github = {
       );
     };
   },
-  getMoreContributorLinks: function(url) {
+  getOrgLinks: function(url) {
     // Check if repo belongs to a different org than hfla. If it does, return the contributor links of all repos in that org
     return request({
       "method": "GET",
@@ -144,12 +144,12 @@ var github = {
       }
     }).then(function(body) {
       if(!body.organization || body.organization.login == 'hackforla') return {"repos": [], "issueCommentsUrls": []};
-      return github.getReposFromOrg(body.organization.repos_url);
+      return github.getOrgLinksHelper(body.organization.repos_url);
     }).catch(function(err) {
       return err.message;
     });
   },
-  getReposFromOrg: function(url) {
+  getOrgLinksHelper: function(url) {
     // Helper method for getMoreContributorLinks that returns the contributor links of repos from a organization url
     return request({
       "method": "GET",
@@ -166,7 +166,6 @@ var github = {
         issueCommentUrls.push(repo.issue_comment_url.substring(0, repo.issue_comment_url.length-9));
         repos.push(repo.contributors_url);
       }
-      console.log(repos);
       return {
         "repos": repos,
         "issueCommentsUrls": issueCommentUrls
@@ -218,21 +217,29 @@ async function main(params) {
   untaggedRepos = [79977929];
   await github.getAllTaggedRepos();
   await github.getUntaggedRepos(untaggedRepos);
+  // Get sibling links
   for(i = 0; i < github.apiData.length; i++){
-    await github.getMoreContributorLinks(github.apiData[i].repoEndpoint);
+    let {repos, issueCommentsUrls} = await github.getOrgLinks(github.apiData[i].repoEndpoint);
+    
+    github.apiData[i].contributors.url = github.apiData[i].contributors.url.concat(repos);
+    github.apiData[i].contributors.url = github.apiData[i].contributors.url.filter(function(link, index, array){
+      return array.indexOf(link) == index;
+    });
+    
+    github.apiData[i].issueComments.url = github.apiData[i].issueComments.url.concat(issueCommentsUrls);
+    github.apiData[i].issueComments.url = github.apiData[i].issueComments.url.filter(function(link, index, array){
+      return array.indexOf(link) == index;
+    });
   }
-  let lps = [], ldone = false
-  let cps = []
-  let clps = [], cdone = false // Clps represents Contributor Links Promises, which is the array of promises that will result in arrays of contributor links for projects under a different org. cdone represents the whole process of getting contributors being done
-  
-  let cmps = [], cmdone = false
+  let lps = [], ldone = false;
+  let cps = [], cdone = false;
+  let cmps = [], cmdone = false;
 
   for (i = 0; i < github.apiData.length; i++) {
     lps.push(github.getLanguageInfo(github.apiData[i].languages.url));
-    clps.push(github.getMoreContributorLinks(github.apiData[i].repoEndpoint)); // Fetch all possible contributor links first before fetching contributor data
-    // cmps.push(github.getRecentIssueComments(github.apiData[i].issueComments.url));
   }
-  // Get language data
+
+  // Get language data ////////////////////////////////////
   Promise.all(lps)
     .then(function(ls) {
       for (i = 0; i < ls.length; i++) {
@@ -247,78 +254,65 @@ async function main(params) {
     .catch(function(e) {
       console.log(e)
     });
+  /////////////////////////////////////////////////////////
   
-  // Get all contributors data
-  Promise.all(clps)
-    .then(function(cls) {
-      // Add contribtuor links and remove duplicates
-      for (i = 0; i < clps.length; i++) {
-        let repoUrls = cls[i].repos;
-        let issueCommentUrls = cls[i].issueCommentsUrls;
-
-        github.apiData[i].contributors.url = github.apiData[i].contributors.url.concat(repoUrls);
-        github.apiData[i].contributors.url = github.apiData[i].contributors.url.filter(function(link, index, array){
-          return array.indexOf(link) == index;
-        });
-        
-        github.apiData[i].issueComments.url = github.apiData[i].issueComments.url.concat(issueCommentUrls);
-        github.apiData[i].issueComments.url = github.apiData[i].issueComments.url.filter(function(link, index, array){
-          return array.indexOf(link) == index;
-        });
-      }
-      // Get contributors data from each link
-      for(i = 0; i < github.apiData.length; i++) {
-        let data = [] // Array to hold contributors data for each repo in project [i]
-        for(link of github.apiData[i].contributors.url) {
-          data.push(github.getContributorsInfo(link));
-        }
-        cps.push(data);
-      }
-      // cps now holds and array of arrays that hold promises. We need to resolve each array of promises
-      let contribuorsPromises = []; // Will result an array of promises representing the end of reolving the nested array of promises listed above. When this array of promises are resolved, then all the data is fetched and usable.
-      for(i = 0; i < cps.length; i++) {
-        // The reason to use a self-executing function with parameter i is that the contained promise won't have knowledge about i without it. We need i in order to know what project in github.apiData we are working with.
-        (function(i) {
-          let contributorsPromise = Promise.all(cps[i])
-            .then(function(cs) {
-              // We start off with an array of contributor arrays, so we flatten them into one
-              let contributors = cs.flat();
-              // Combine contributions from contributors that come up multiple times and keep track of their contributions
-              for(z = 0; z < contributors.length - 1; z++) {
-                let j = z + 1;
-                while(j < contributors.length) {
-                  if(contributors[z].id == contributors[j].id) {
-                    contributors[z].contributions += contributors[j].contributions;
-                    contributors.splice(j, 1);
-                  } else {
-                    j++;
-                  }
-                }
+  // Get all contributors data ///////////////////////////
+  for(i = 0; i < github.apiData.length; i++) {
+    let contributorData = [] // Array to hold contributors data for each repo in project [i]
+    for(link of github.apiData[i].contributors.url) {
+      contributorData.push(github.getContributorsInfo(link));
+    }
+    cps.push(contributorData);
+  }
+  
+  let contributorsDataPromises = [];
+  for(i = 0; i < cps.length; i++) {
+    console.log(`Name in contributorsPromises loop at [${5}] = ${github.apiData[5].name}`);
+    (function(i) {
+      let contributorsDataPromise = Promise.all(cps[i])
+        .then(function(cs) {
+          console.log(`Name in self executing promise block at [${5}] = ${github.apiData[5].name}`);
+          // We start off with an array of contributor arrays, so we flatten them into one
+          let contributors = cs.flat();
+          // Combine contributions from contributors that come up multiple times and keep track of their contributions
+          for(z = 0; z < contributors.length - 1; z++) {
+            let j = z + 1;
+            while(j < contributors.length) {
+              if(contributors[z].id == contributors[j].id) {
+                contributors[z].contributions += contributors[j].contributions;
+                contributors.splice(j, 1);
+              } else {
+                j++;
               }
-              contributors.sort(github.compareValues('contributions', order = 'desc'));
-              github.apiData[i].contributors.data = contributors;
-            }).catch(function(err) {
-              return err.message;
-            });
-          // Push the current Promise.all() that is working on the current contributors to the overall promise array
-          contribuorsPromises.push(contributorsPromise);
-        })(i);
-      }
-      // When we return this promise, the next then() statement will wait for the array of promises to be resolved
-      return Promise.all(contribuorsPromises);
-    })
-    .then(function(promises) {
+            }
+          }
+          contributors.sort(github.compareValues('contributions', order = 'desc'));
+          github.apiData[i].contributors.data = contributors;
+        }).catch(function(err) {
+          return err.message;
+        });
+      // Push the current Promise.all() that is working on the current contributors to the overall promise array
+      contributorsDataPromises.push(contributorsDataPromise);
+    })(i);
+  }
+  Promise.all(contributorsDataPromises)
+    .then(function(contributorsData){
       cdone = true;
       if (ldone && cmdone) {
         console.log('Calling finish in Contributors work');
         finish();
       }
     })
-    .catch(function(e) {
+    .catch(function(e){
       console.log(e.message);
     });
+  //////////////////////////////////////////////////////////
   
-  // Get recent repo issue comments
+  // Get recent repo issue comments ////////////////////////
+  /*
+  for (i = 0; i < github.apiData.length; i++) {
+    cmps.push(github.getRecentIssueComments(github.apiData[i].issueComments.url));
+  }
   Promise.all(cmps)
     .then(function(cs){
       for (i = 0; i < cs.length; i++) {
@@ -368,11 +362,14 @@ async function main(params) {
     .catch(function(e){
       console.log(e)
     });
+  */
+  //////////////////////////////////////////////////////////
+
   function finish(){
     let output = github.apiData.sort(github.compareValues('id'));
     // console.log(JSON.stringify(output, null, 2));
-    fs.writeFileSync('github-data.json', JSON.stringify(output, null, 2));
-    // fs.writeFileSync('github-data-comments.json', JSON.stringify(output, null, 2));
+    // fs.writeFileSync('github-data.json', JSON.stringify(output, null, 2));
+    fs.writeFileSync('github-data-comments.json', JSON.stringify(output, null, 2));
   }
 }
 
