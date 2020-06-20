@@ -122,7 +122,6 @@ var github = {
         return 0;
       });
       return {
-        totalCommenters: Object.keys(commenters).length,
         data: commentersArray
       };
     }catch(err){
@@ -146,7 +145,6 @@ async function main(params) {
     .then(function(issueComments){
       for (i = 0; i < issueComments.length; i++) {
         parsedComments = github.parseComments(issueComments[i]);
-        github.apiData[i].issueComments.totalCommenters = parsedComments.totalCommenters;
         github.apiData[i].issueComments.data = parsedComments.data;
       }
       finish();

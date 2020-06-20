@@ -24,7 +24,7 @@ var github = {
           languages: { url: project.languages_url, data: [] },
           contributors: { url: [project.contributors_url], data: [] },
           repoEndpoint: project.url,
-          issueComments: {url: project.issue_comment_url.substring(0, project.issue_comment_url.length-9), data: []}
+          issueComments: {url: [project.issue_comment_url.substring(0, project.issue_comment_url.length-9)], data: []}
         });
       });
     }).catch(function(err) {
@@ -143,7 +143,7 @@ var github = {
         "User-Agent": github.agent
       }
     }).then(function(body) {
-      if(!body.organization || body.organization.login == 'hackforla') return [];
+      if(!body.organization || body.organization.login == 'hackforla') return {"repos": [], "issueCommentsUrls": []};
       return github.getReposFromOrg(body.organization.repos_url);
     }).catch(function(err) {
       return err.message;
@@ -161,12 +161,18 @@ var github = {
       }
     }).then(function(body) {
       let repos = [];
+      let issueCommentUrls = [];
       for(repo of body) {
+        issueCommentUrls.push(repo.issue_comment_url.substring(0, repo.issue_comment_url.length-9));
         repos.push(repo.contributors_url);
       }
-      return repos;
+      console.log(repos);
+      return {
+        "repos": repos,
+        "issueCommentsUrls": issueCommentUrls
+      }
     }).catch(function(err) {
-      return err.message;
+      console.log(err.message);
     });
   },
   getRecentIssueComments: function(url) {
@@ -191,7 +197,10 @@ var github = {
           "issue_url": comment.issue_url,
           "issue_id": comment.id,
           "created_at": comment.created_at,
-          "updated_at": comment.updated_at
+          "updated_at": comment.updated_at,
+          "github_url": comment.user.html_url,
+          "avatar_url": comment.user.avatar_url,
+          "gravatar_id": comment.user.gravatar_id
         });
       });
       return Promise.resolve(commenters);
@@ -206,10 +215,12 @@ async function main(params) {
   github.token = params.token;
   github.agent = params.agent;
 
-
   untaggedRepos = [79977929];
   await github.getAllTaggedRepos();
   await github.getUntaggedRepos(untaggedRepos);
+  for(i = 0; i < github.apiData.length; i++){
+    await github.getMoreContributorLinks(github.apiData[i].repoEndpoint);
+  }
   let lps = [], ldone = false
   let cps = []
   let clps = [], cdone = false // Clps represents Contributor Links Promises, which is the array of promises that will result in arrays of contributor links for projects under a different org. cdone represents the whole process of getting contributors being done
@@ -219,7 +230,7 @@ async function main(params) {
   for (i = 0; i < github.apiData.length; i++) {
     lps.push(github.getLanguageInfo(github.apiData[i].languages.url));
     clps.push(github.getMoreContributorLinks(github.apiData[i].repoEndpoint)); // Fetch all possible contributor links first before fetching contributor data
-    cmps.push(github.getRecentIssueComments(github.apiData[i].issueComments.url));
+    // cmps.push(github.getRecentIssueComments(github.apiData[i].issueComments.url));
   }
   // Get language data
   Promise.all(lps)
@@ -236,13 +247,22 @@ async function main(params) {
     .catch(function(e) {
       console.log(e)
     });
+  
   // Get all contributors data
   Promise.all(clps)
     .then(function(cls) {
       // Add contribtuor links and remove duplicates
       for (i = 0; i < clps.length; i++) {
-        github.apiData[i].contributors.url = github.apiData[i].contributors.url.concat(cls[i]);
+        let repoUrls = cls[i].repos;
+        let issueCommentUrls = cls[i].issueCommentsUrls;
+
+        github.apiData[i].contributors.url = github.apiData[i].contributors.url.concat(repoUrls);
         github.apiData[i].contributors.url = github.apiData[i].contributors.url.filter(function(link, index, array){
+          return array.indexOf(link) == index;
+        });
+        
+        github.apiData[i].issueComments.url = github.apiData[i].issueComments.url.concat(issueCommentUrls);
+        github.apiData[i].issueComments.url = github.apiData[i].issueComments.url.filter(function(link, index, array){
           return array.indexOf(link) == index;
         });
       }
@@ -295,13 +315,49 @@ async function main(params) {
       }
     })
     .catch(function(e) {
-      return e.message;
+      console.log(e.message);
     });
+  
   // Get recent repo issue comments
   Promise.all(cmps)
     .then(function(cs){
       for (i = 0; i < cs.length; i++) {
-        github.apiData[i].issueComments.data = cs[i]
+        currentProjectId = github.apiData[i].id;
+        incomingComments = cs[i];
+        console.log(github.apiData[i].name);
+        console.log(incomingComments);
+        // Get old comments data and add new data to it
+        let oldData = JSON.parse(fs.readFileSync('github-data.json', 'utf8'));
+        let dataExists = false;
+        let issueCommentsData = {};
+        for(project of oldData){
+          if(project.id == currentProjectId){
+            dataExists = true;
+            issueCommentsData = project.issueComments.data;
+          }
+        }
+        if(dataExists){
+          for(comment of incomingComments){
+            let userFound = false;
+            for(j = 0; j < issueCommentsData.length; j++){
+              if(comment.user_id == issueCommentsData[j].id){
+                userFound = true;
+                issueCommentsData[j].total++;
+              }
+            }
+            if(!userFound){
+              issueCommentsData.push({
+                "login": comment.login,
+                "total": 1,
+                "id": comment.user_id,
+                "github_url": comment.github_url,
+                "avatar_url": comment.avatar_url,
+                "gravatar_id": comment.gravatar_id
+              });
+            }
+          }
+        }
+        github.apiData[i].issueComments.data = issueCommentsData;
       }
       cmdone = true
       if (ldone & cdone) {
@@ -316,6 +372,7 @@ async function main(params) {
     let output = github.apiData.sort(github.compareValues('id'));
     // console.log(JSON.stringify(output, null, 2));
     fs.writeFileSync('github-data.json', JSON.stringify(output, null, 2));
+    // fs.writeFileSync('github-data-comments.json', JSON.stringify(output, null, 2));
   }
 }
 
