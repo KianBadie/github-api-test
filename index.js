@@ -267,11 +267,9 @@ async function main(params) {
   
   let contributorsDataPromises = [];
   for(i = 0; i < cps.length; i++) {
-    console.log(`Name in contributorsPromises loop at [${5}] = ${github.apiData[5].name}`);
     (function(i) {
       let contributorsDataPromise = Promise.all(cps[i])
         .then(function(cs) {
-          console.log(`Name in self executing promise block at [${5}] = ${github.apiData[5].name}`);
           // We start off with an array of contributor arrays, so we flatten them into one
           let contributors = cs.flat();
           // Combine contributions from contributors that come up multiple times and keep track of their contributions

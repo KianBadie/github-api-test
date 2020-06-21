@@ -121,9 +121,7 @@ var github = {
         }
         return 0;
       });
-      return {
-        data: commentersArray
-      };
+      return commentersArray;
     }catch(err){
       fs.writeFileSync('error.json', JSON.stringify(comments, null, 2));
       throw err.message;
@@ -136,27 +134,41 @@ async function main(params) {
   github.token = params.token;
   github.agent = params.agent;
 
-  let issueCommentPromises = []
+  let issueCommentDataPromises = []
   github.getLocalData();
   for (i = 0; i < github.apiData.length; i++) {
-    issueCommentPromises.push(github.getAllComments(github.apiData[i].issueComments.url));
+    let issueCommentsData = [];
+    for(link of github.apiData[i].issueComments.url){
+      issueCommentsData.push(github.getAllComments(link));
+    }
+    issueCommentDataPromises.push(issueCommentsData);
   }
-  Promise.all(issueCommentPromises)
-    .then(function(issueComments){
-      for (i = 0; i < issueComments.length; i++) {
-        parsedComments = github.parseComments(issueComments[i]);
-        github.apiData[i].issueComments.data = parsedComments.data;
-      }
-      finish();
-    })
-    .catch(function(err){
-        console.log(err);    
-    });
 
-  function finish(){
-    console.log('In finish');
-    fs.writeFileSync('github-data.json', JSON.stringify(github.apiData, null, 2));
+  let finishedCommentsPromises = [];
+  for(i = 0; i < issueCommentDataPromises.length; i++){
+    (function(i){
+      finishedCommentsPromises.push(
+        Promise.all(issueCommentDataPromises[i])
+          .then(function(issueCommentData){
+            issueCommentData = issueCommentData.flat();
+            issueCommentData = github.parseComments(issueCommentData);
+            // github.apiData[i].issueComments.data = issueCommentData;
+            github.apiData[i].contributors.data = issueCommentData;
+          })
+          .catch(function(e){
+            console.log(e);
+        })
+      );
+    })(i);
   }
+
+  Promise.all(finishedCommentsPromises)
+    .then(function(finishedPromises){
+      fs.writeFileSync('github-data.json', JSON.stringify(github.apiData, null, 2));
+    })
+    .catch(function(e){
+      console.log(e);
+    });
 }
 
 let token = process.env.token;
