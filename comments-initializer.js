@@ -152,8 +152,41 @@ async function main(params) {
           .then(function(issueCommentData){
             issueCommentData = issueCommentData.flat();
             issueCommentData = github.parseComments(issueCommentData);
-            // github.apiData[i].issueComments.data = issueCommentData;
-            github.apiData[i].contributors.data = issueCommentData;
+            // Thread comment data and contributors data
+            let contributorsDictionary = {};
+            for(j = 0; j < github.apiData[i].contributors.data.length; j++){
+              let contributor = github.apiData[i].contributors.data[j];
+              contributorsDictionary[contributor.id] = contributor;
+            }
+            for(j = 0; j < issueCommentData.length; j++){
+              let commenter = issueCommentData[j];
+              if(contributorsDictionary.hasOwnProperty(commenter.id)){
+                contributorsDictionary[commenter.id].contributions += commenter.total;
+              }
+              else {
+                contributorsDictionary[commenter.id] = {
+                  "id": commenter.id,
+                  "github_url": commenter.github_url,
+                  "avatar_url": commenter.avatar_url,
+                  "gravatar_id": commenter.gravatar_id,
+                  "contributions": commenter.total
+                };
+              }
+            }
+            let contributorsData = [];
+            for(contributor in contributorsDictionary){
+              contributorsData.push(contributorsDictionary[contributor]);
+            }
+            contributorsData.sort(function(a, b){
+              if(a.contributions < b.contributions){
+                return 1;
+              }
+              else if (a.contributions > b.contributions){
+                return -1;
+              }
+              return 0;
+            });
+            github.apiData[i].contributors.data = contributorsData;
           })
           .catch(function(e){
             console.log(e);

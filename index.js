@@ -233,7 +233,7 @@ async function main(params) {
   }
   let lps = [], ldone = false;
   let cps = [], cdone = false;
-  let cmps = [], cmdone = false;
+  let cmps = [], cmdone = true;
 
   for (i = 0; i < github.apiData.length; i++) {
     lps.push(github.getLanguageInfo(github.apiData[i].languages.url));
@@ -367,7 +367,7 @@ async function main(params) {
     let output = github.apiData.sort(github.compareValues('id'));
     // console.log(JSON.stringify(output, null, 2));
     // fs.writeFileSync('github-data.json', JSON.stringify(output, null, 2));
-    fs.writeFileSync('github-data-comments.json', JSON.stringify(output, null, 2));
+    fs.writeFileSync('github-data.json', JSON.stringify(output, null, 2));
   }
 }
 
