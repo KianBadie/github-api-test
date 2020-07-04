@@ -9,10 +9,6 @@ var github = {
   agent: null,
   apiData: [],
 
-  getLocalData: function(){
-      let data = fs.readFileSync('github-data.json', 'utf8');
-      github.apiData = JSON.parse(data);
-  },
   getAllComments: function(url){
     return request({
         "method": "GET",
@@ -23,7 +19,7 @@ var github = {
           "Authorization": "token " + github.token,
           "User-Agent": github.agent
         }
-      }).then(function(response) {
+      }).then(async function(response) {
         // Get the total amount of pages in the response
         let comments = [];
         let lastPage = 1;
@@ -36,9 +32,9 @@ var github = {
           lastPage = parsed.page;
         }
         // Loop through every page possible in response
-        for(i = 1; i <= lastPage; i++){
-          let url = `${response.request.href}?page=${i}`;
-          let pageOfCommentData = github.getCommentsHelper(url);
+        for(j = 1; j <= lastPage; j++){
+          let url = `${response.request.href}?page=${j}`;
+          let pageOfCommentData = await github.getCommentsHelper(url);
           comments = comments.concat(pageOfCommentData);
         }
         return Promise.all(comments).then(function(result){
@@ -129,6 +125,48 @@ var github = {
       fs.writeFileSync('error.json', JSON.stringify(comments, null, 2));
       throw err.message;
     }
+  },
+  getOrgLinks: function(url) {
+    // Check if repo belongs to a different org than hfla. If it does, return the contributor links of all repos in that org
+    return request({
+      "method": "GET",
+      "uri": url,
+      "json": true,
+      "headers": {
+        "Authorization": "token " + github.token,
+        "User-Agent": github.agent
+      }
+    }).then(function(body) {
+      if(!body.organization || body.organization.login == 'hackforla') return {"repos": [], "issueCommentsUrls": [body.issue_comment_url.substring(0, body.issue_comment_url.length-9)]};
+      return github.getOrgLinksHelper(body.organization.repos_url);
+    }).catch(function(err) {
+      return err.message;
+    });
+  },
+  getOrgLinksHelper: function(url) {
+    // Helper method for getMoreContributorLinks that returns the contributor links of repos from a organization url
+    return request({
+      "method": "GET",
+      "uri": url,
+      "json": true,
+      "headers": {
+        "Authorization": "token" + github.token,
+        "User-Agent": github.agent
+      }
+    }).then(function(body) {
+      let repos = [];
+      let issueCommentUrls = [];
+      for(repo of body) {
+        issueCommentUrls.push(repo.issue_comment_url.substring(0, repo.issue_comment_url.length-9));
+        repos.push(repo.contributors_url);
+      }
+      return {
+        "repos": repos,
+        "issueCommentsUrls": issueCommentUrls
+      }
+    }).catch(function(err) {
+      console.log(err.message);
+    });
   }
 }
 
@@ -138,11 +176,13 @@ async function main(params) {
   github.agent = params.agent;
 
   let issueCommentDataPromises = [];
-  github.getLocalData();
+  github.apiData = getLocalData();
+  await initializeIssueCommentsField(github);
   for (i = 0; i < github.apiData.length; i++) {
     let issueCommentsData = [];
+    console.log(`Fetching comment data for ${github.apiData[i].name}`);
     for(link of github.apiData[i].issueComments.url){
-      let commentData = github.getAllComments(link);
+      let commentData = await github.getAllComments(link);
       issueCommentsData.push(commentData);
     }
     issueCommentDataPromises.push(issueCommentsData);
@@ -179,6 +219,26 @@ main({
     'token': token,
     'agent': 'KianBadie' 
 });
+
+function getLocalData(){
+  let data = fs.readFileSync('github-data.json', 'utf8');
+  return JSON.parse(data);
+}
+
+async function initializeIssueCommentsField(github){
+  for(i = 0; i < github.apiData.length; i++){
+    let {repos, issueCommentsUrls} = await github.getOrgLinks(github.apiData[i].repoEndpoint);
+    
+    github.apiData[i].issueComments = {
+      url: [],
+      data: []
+    };
+    github.apiData[i].issueComments.url = github.apiData[i].issueComments.url.concat(issueCommentsUrls);
+    github.apiData[i].issueComments.url = github.apiData[i].issueComments.url.filter(function(link, index, array){
+      return array.indexOf(link) == index;
+    });
+  }
+}
 
 function sortContributions(users, criteria){
   users.sort(function(a, b){
