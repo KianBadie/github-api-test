@@ -38,7 +38,8 @@ var github = {
         // Loop through every page possible in response
         for(i = 1; i <= lastPage; i++){
           let url = `${response.request.href}?page=${i}`;
-          comments = comments.concat(github.getCommentsHelper(url));
+          let pageOfCommentData = github.getCommentsHelper(url);
+          comments = comments.concat(pageOfCommentData);
         }
         return Promise.all(comments).then(function(result){
           return [].concat.apply([], result);
@@ -59,7 +60,7 @@ var github = {
     }).then(function(body){
       let result = [];
       for(comment of body){
-        let { url, issue_url, id, user } = comment; 
+        let { url, issue_url, id, user } = comment;
         let { id: user_id, login: user_login, avatar_url: user_avatar_url, url: user_url, gravatar_id, html_url } = user; 
         result.push({
           url,
@@ -85,12 +86,15 @@ var github = {
       let commenters = {};
       for(comment of comments){
         let { user } = comment;
+        if(!user){ 
+          console.log(comment); 
+        }
         if(user.user_login in commenters){
-          commenters[user.user_login].total+= 1 
+          commenters[user.user_login].contributions+= 1 
         }
         else{
           commenters[user.user_login] = {
-            'total': 1,
+            'contributions': 1,
             'id': user.user_id,
             'github_url': user.html_url,
             'avatar_url': user.user_avatar_url,
@@ -103,8 +107,7 @@ var github = {
       let commentersArray = [];
       for(commenter in commenters){
         let commenterObj = {
-          "login": commenter,
-          "total": commenters[commenter].total,
+          "contributions": commenters[commenter].contributions,
           "id": commenters[commenter].id,
           "github_url": commenters[commenter].github_url,
           "avatar_url": commenters[commenter].avatar_url,
@@ -113,10 +116,10 @@ var github = {
         commentersArray.push(commenterObj);
       }
       commentersArray.sort(function(a, b){
-        if(a.total < b.total){
+        if(a.contributions < b.contributions){
           return 1;
         }
-        else if (a.total > b.total){
+        else if (a.contributions > b.contributions){
           return -1;
         }
         return 0;
@@ -139,11 +142,11 @@ async function main(params) {
   for (i = 0; i < github.apiData.length; i++) {
     let issueCommentsData = [];
     for(link of github.apiData[i].issueComments.url){
-      issueCommentsData.push(github.getAllComments(link));
+      let commentData = github.getAllComments(link);
+      issueCommentsData.push(commentData);
     }
     issueCommentDataPromises.push(issueCommentsData);
   }
-
   let finishedCommentsPromises = [];
   for(i = 0; i < issueCommentDataPromises.length; i++){
     (function(i){
@@ -152,9 +155,8 @@ async function main(params) {
           .then(function(issueCommentData){
             issueCommentData = issueCommentData.flat();
             issueCommentData = github.parseComments(issueCommentData);
-            let contributorsData = threadContributions(github.apiData[i].contributors.data, issueCommentData);
-            sortContributions(contributorsData, 'contributions');
-            github.apiData[i].contributors.data = contributorsData;
+            sortContributions(issueCommentData, 'contributions');
+            github.apiData[i].issueComments.data = issueCommentData;
           })
           .catch(function(e){
             console.log(e);
@@ -190,30 +192,23 @@ function sortContributions(users, criteria){
   });
 }
 
-function threadContributions(commitContributions, commentContributions){
-  let contributorsDictionary = {};
-  for(j = 0; j < commitContributions.length; j++){
-    let contributor = commitContributions[j];
-    contributorsDictionary[contributor.id] = contributor;
+// Deep copy function I got from a medium article
+const deepCopyFunction = (inObject) => {
+  let outObject, value, key
+
+  if (typeof inObject !== "object" || inObject === null) {
+    return inObject // Return the value if inObject is not an object
   }
-  for(j = 0; j < commentContributions.length; j++){
-    let commenter = commentContributions[j];
-    if(contributorsDictionary.hasOwnProperty(commenter.id)){
-      contributorsDictionary[commenter.id].contributions += commenter.total;
-    }
-    else {
-      contributorsDictionary[commenter.id] = {
-        "id": commenter.id,
-        "github_url": commenter.github_url,
-        "avatar_url": commenter.avatar_url,
-        "gravatar_id": commenter.gravatar_id,
-        "contributions": commenter.total
-      };
-    }
+
+  // Create an array or object to hold the values
+  outObject = Array.isArray(inObject) ? [] : {}
+
+  for (key in inObject) {
+    value = inObject[key]
+
+    // Recursively (deep) copy for nested objects, including arrays
+    outObject[key] = deepCopyFunction(value)
   }
-  let contributorsData = [];
-  for(contributor in contributorsDictionary){
-    contributorsData.push(contributorsDictionary[contributor]);
-  }
-  return contributorsData;
+
+  return outObject
 }

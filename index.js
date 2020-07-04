@@ -2,6 +2,7 @@ const environment = require('dotenv').config()
 const fs = require('fs');
 const path = require('path');
 const request = require('request-promise');
+const { finished } = require('stream');
 
 var github = {
   token: null,
@@ -191,15 +192,11 @@ var github = {
       let commenters = [];
       body.forEach(function(comment) {
         commenters.push({
-          "login": comment.user.login,
-          "user_id": comment.user.id,
-          "issue_url": comment.issue_url,
-          "issue_id": comment.id,
-          "created_at": comment.created_at,
-          "updated_at": comment.updated_at,
+          "id": comment.user.id,
           "github_url": comment.user.html_url,
           "avatar_url": comment.user.avatar_url,
-          "gravatar_id": comment.user.gravatar_id
+          "gravatar_id": comment.user.gravatar_id,
+          "contributions": 1
         });
       });
       return Promise.resolve(commenters);
@@ -209,6 +206,10 @@ var github = {
   }
 }
 
+let ldone = false;
+let cdone = false;
+let cmdone = false;
+
 async function main(params) {
   console.log('In the async function main');
   github.token = params.token;
@@ -217,7 +218,19 @@ async function main(params) {
   untaggedRepos = [79977929];
   await github.getAllTaggedRepos();
   await github.getUntaggedRepos(untaggedRepos);
-  // Get sibling links
+  await getSiblingUrls(github);
+
+  getLanguageData(github);
+  getContributorData(github);
+}
+
+let token = process.env.token;
+main({ 
+    'token': token,
+    'agent': 'KianBadie' 
+});
+
+async function getSiblingUrls(github){
   for(i = 0; i < github.apiData.length; i++){
     let {repos, issueCommentsUrls} = await github.getOrgLinks(github.apiData[i].repoEndpoint);
     
@@ -231,21 +244,19 @@ async function main(params) {
       return array.indexOf(link) == index;
     });
   }
-  let lps = [], ldone = false;
-  let cps = [], cdone = false;
-  let cmps = [], cmdone = true;
+}
 
+function getLanguageData(github){
+  let lps = [];
   for (i = 0; i < github.apiData.length; i++) {
     lps.push(github.getLanguageInfo(github.apiData[i].languages.url));
   }
-
-  // Get language data ////////////////////////////////////
   Promise.all(lps)
     .then(function(ls) {
       for (i = 0; i < ls.length; i++) {
         github.apiData[i].languages.data = ls[i]
       }
-      ldone = true
+      ldone = true;
       if (cdone && cmdone) {
         console.log('Calling finish in languages work');
         finish();
@@ -253,10 +264,26 @@ async function main(params) {
     })
     .catch(function(e) {
       console.log(e)
+    }
+  );  
+}
+
+async function getContributorData(github){
+  // Added awaits even though there is a promise because I was running into rate limits
+  // (too many concurent request). I added the awaits to remedey that 
+  let commitContributorsWork = await getCommitContributorsData(github);
+  let commentersContributorsWork = await getCommenterContributorsData(github);
+  Promise.all([commitContributorsWork, commentersContributorsWork])
+    .then(function(){
+      threadCommitsComments();
+    })
+    .catch(function(e){
+      console.log(e);
     });
-  /////////////////////////////////////////////////////////
-  
-  // Get all contributors data ///////////////////////////
+}
+
+function getCommitContributorsData(github){
+  let cps = [];
   for(i = 0; i < github.apiData.length; i++) {
     let contributorData = [] // Array to hold contributors data for each repo in project [i]
     for(link of github.apiData[i].contributors.url) {
@@ -270,30 +297,16 @@ async function main(params) {
     (function(i) {
       let contributorsDataPromise = Promise.all(cps[i])
         .then(function(cs) {
-          // We start off with an array of contributor arrays, so we flatten them into one
           let contributors = cs.flat();
-          // Combine contributions from contributors that come up multiple times and keep track of their contributions
-          for(z = 0; z < contributors.length - 1; z++) {
-            let j = z + 1;
-            while(j < contributors.length) {
-              if(contributors[z].id == contributors[j].id) {
-                contributors[z].contributions += contributors[j].contributions;
-                contributors.splice(j, 1);
-              } else {
-                j++;
-              }
-            }
-          }
-          contributors.sort(github.compareValues('contributions', order = 'desc'));
+          contributors = condenseContributorsList(contributors);
           github.apiData[i].contributors.data = contributors;
         }).catch(function(err) {
-          return err.message;
+          console.log(err.message);
         });
-      // Push the current Promise.all() that is working on the current contributors to the overall promise array
       contributorsDataPromises.push(contributorsDataPromise);
     })(i);
   }
-  Promise.all(contributorsDataPromises)
+  return Promise.all(contributorsDataPromises)
     .then(function(contributorsData){
       cdone = true;
       if (ldone && cmdone) {
@@ -303,76 +316,153 @@ async function main(params) {
     })
     .catch(function(e){
       console.log(e.message);
-    });
-  //////////////////////////////////////////////////////////
-  
-  // Get recent repo issue comments ////////////////////////
-  /*
+    }
+  );
+}
+
+function getCommenterContributorsData(github){
+  let cmps = [];
   for (i = 0; i < github.apiData.length; i++) {
-    cmps.push(github.getRecentIssueComments(github.apiData[i].issueComments.url));
+    let contributorData = [];
+    for(link of github.apiData[i].issueComments.url){
+      contributorData.push(github.getRecentIssueComments(link));
+    }
+    cmps.push(contributorData);
   }
-  Promise.all(cmps)
-    .then(function(cs){
-      for (i = 0; i < cs.length; i++) {
-        currentProjectId = github.apiData[i].id;
-        incomingComments = cs[i];
-        console.log(github.apiData[i].name);
-        console.log(incomingComments);
-        // Get old comments data and add new data to it
-        let oldData = JSON.parse(fs.readFileSync('github-data.json', 'utf8'));
-        let dataExists = false;
-        let issueCommentsData = {};
-        for(project of oldData){
-          if(project.id == currentProjectId){
-            dataExists = true;
-            issueCommentsData = project.issueComments.data;
-          }
-        }
-        if(dataExists){
-          for(comment of incomingComments){
-            let userFound = false;
-            for(j = 0; j < issueCommentsData.length; j++){
-              if(comment.user_id == issueCommentsData[j].id){
-                userFound = true;
-                issueCommentsData[j].total++;
-              }
-            }
-            if(!userFound){
-              issueCommentsData.push({
-                "login": comment.login,
-                "total": 1,
-                "id": comment.user_id,
-                "github_url": comment.github_url,
-                "avatar_url": comment.avatar_url,
-                "gravatar_id": comment.gravatar_id
-              });
+
+  let commenterDataPromises = [];
+  let oldGitHubData = getLocalData();
+  for(i = 0; i < cmps.length; i++){
+    (function(i, oldGitHubData){
+      let commenterDataPromise = Promise.all(cmps[i])
+        .then(function(cm){
+          let commenters = cm.flat();
+          // Get old comments data. Not using index i because what if the new data has a
+          // different amount of projects than the old data
+          let oldDataIndex = -1;
+          for(let z = 0; z < oldGitHubData.length; z++){
+            if(github.apiData[i].id == oldGitHubData[z].id) {
+              oldDataIndex = z;
             }
           }
-        }
-        github.apiData[i].issueComments.data = issueCommentsData;
-      }
-      cmdone = true
-      if (ldone & cdone) {
-        console.log('Calling finish in issue comments work');
+          if(oldDataIndex > 0){
+            // Old data is found, thread old and new data
+            let oldCommentData = oldGitHubData[oldDataIndex].issueComments.data;
+            commenters = commenters.concat(oldCommentData);
+          }
+          commenters = condenseContributorsList(commenters);
+          github.apiData[i].issueComments.data = commenters;
+        })
+        .catch(function(e){
+          console.log(e);
+        });
+      commenterDataPromises.push(commenterDataPromise);
+    })(i, oldGitHubData);
+  }
+  return Promise.all(commenterDataPromises)
+    .then(function(commenterData){
+      cmdone = true;
+      if (ldone && cdone) {
+        console.log('Calling finish in Commenters work');
         finish();
       }
     })
     .catch(function(e){
-      console.log(e)
-    });
-  */
-  //////////////////////////////////////////////////////////
-
-  function finish(){
-    let output = github.apiData.sort(github.compareValues('id'));
-    // console.log(JSON.stringify(output, null, 2));
-    // fs.writeFileSync('github-data.json', JSON.stringify(output, null, 2));
-    fs.writeFileSync('github-data.json', JSON.stringify(output, null, 2));
-  }
+      console.log(e.message);
+    }
+  );
 }
 
-let token = process.env.token;
-main({ 
-    'token': token,
-    'agent': 'KianBadie' 
-});
+function getLocalData(){
+  let data = fs.readFileSync('github-data.json', 'utf8');
+  return JSON.parse(data);
+}
+
+function condenseContributorsList(contributors){
+  let contributorsDictionary = {};
+  for(i = 0; i < contributors.length; i++){
+    let contributor = contributors[i];
+    if(contributorsDictionary.hasOwnProperty(contributor.id)){
+      contributorsDictionary[contributor.id].contributions += contributor.contributions;
+    }
+    else {
+      contributorsDictionary[contributor.id] = {
+        "id": contributor.id,
+        "github_url": contributor.github_url,
+        "avatar_url": contributor.avatar_url,
+        "gravatar_id": contributor.gravatar_id,
+        "contributions": contributor.contributions
+      };
+    }
+  }
+  let contributorData = [];
+  for(contributor in contributorsDictionary){
+    contributorData.push(contributorsDictionary[contributor]);
+  }
+  contributorData.sort(github.compareValues('contributions', order = 'desc'));
+  return contributorData;
+}
+
+function threadCommitsComments(){
+  for(let i = 0; i < github.apiData.length; i++){
+    let contributorsDictionary = {};
+    let commitContributions = deepCopyFunction(github.apiData[i].contributors.data);
+    let commentContributions = deepCopyFunction(github.apiData[i].issueComments.data);
+
+    for(j = 0; j < commitContributions.length; j++){
+      let contributor = commitContributions[j];
+      contributorsDictionary[contributor.id] = contributor;
+    }
+    for(j = 0; j < commentContributions.length; j++){
+      let commenter = commentContributions[j];
+      if(contributorsDictionary.hasOwnProperty(commenter.id)){
+        contributorsDictionary[commenter.id].contributions += commenter.contributions; // This number is changing the contributors data
+      }
+      else {
+        contributorsDictionary[commenter.id] = {
+          "id": commenter.id,
+          "github_url": commenter.github_url,
+          "avatar_url": commenter.avatar_url,
+          "gravatar_id": commenter.gravatar_id,
+          "contributions": commenter.contributions
+        };
+      }
+    }
+    let contributorsData = [];
+    for(contributor in contributorsDictionary){
+      contributorsData.push(contributorsDictionary[contributor]);
+    }
+    contributorsData.sort(github.compareValues('contributions', order = 'desc'));
+    github.apiData[i].contributorsComplete = {
+      data: contributorsData
+    };
+  }
+  finish();
+}
+
+// Deep copy function I got from a medium article
+const deepCopyFunction = (inObject) => {
+  let outObject, value, key
+
+  if (typeof inObject !== "object" || inObject === null) {
+    return inObject // Return the value if inObject is not an object
+  }
+
+  // Create an array or object to hold the values
+  outObject = Array.isArray(inObject) ? [] : {}
+
+  for (key in inObject) {
+    value = inObject[key]
+
+    // Recursively (deep) copy for nested objects, including arrays
+    outObject[key] = deepCopyFunction(value)
+  }
+
+  return outObject
+}
+
+function finish(){
+  let output = github.apiData.sort(github.compareValues('id'));
+  // console.log(JSON.stringify(output, null, 2));
+  fs.writeFileSync('github-data.json', JSON.stringify(output, null, 2));
+}
