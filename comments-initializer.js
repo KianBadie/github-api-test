@@ -37,9 +37,7 @@ var github = {
           let pageOfCommentData = await github.getCommentsHelper(url);
           comments = comments.concat(pageOfCommentData);
         }
-        return Promise.all(comments).then(function(result){
-          return [].concat.apply([], result);
-        });
+        return comments;
       }).catch(function(err) {
           return err.message;
       });
@@ -76,55 +74,6 @@ var github = {
     }).catch(function(err){
       return err.message;
     });
-  },
-  parseComments: function(comments){
-    try{
-      let commenters = {};
-      for(comment of comments){
-        let { user } = comment;
-        if(!user){ 
-          console.log(comment); 
-        }
-        if(user.user_login in commenters){
-          commenters[user.user_login].contributions+= 1 
-        }
-        else{
-          commenters[user.user_login] = {
-            'contributions': 1,
-            'id': user.user_id,
-            'github_url': user.html_url,
-            'avatar_url': user.user_avatar_url,
-            'gravatar_id': user.gravatar_id
-          }
-        }
-      }
-
-      // Build an array from the commenters data
-      let commentersArray = [];
-      for(commenter in commenters){
-        let commenterObj = {
-          "contributions": commenters[commenter].contributions,
-          "id": commenters[commenter].id,
-          "github_url": commenters[commenter].github_url,
-          "avatar_url": commenters[commenter].avatar_url,
-          "gravatar_id": commenters[commenter].gravatar_id
-        }
-        commentersArray.push(commenterObj);
-      }
-      commentersArray.sort(function(a, b){
-        if(a.contributions < b.contributions){
-          return 1;
-        }
-        else if (a.contributions > b.contributions){
-          return -1;
-        }
-        return 0;
-      });
-      return commentersArray;
-    }catch(err){
-      fs.writeFileSync('error.json', JSON.stringify(comments, null, 2));
-      throw err.message;
-    }
   },
   getOrgLinks: function(url) {
     // Check if repo belongs to a different org than hfla. If it does, return the contributor links of all repos in that org
@@ -187,31 +136,16 @@ async function main(params) {
     }
     issueCommentDataPromises.push(issueCommentsData);
   }
-  let finishedCommentsPromises = [];
+  
   for(i = 0; i < issueCommentDataPromises.length; i++){
-    (function(i){
-      finishedCommentsPromises.push(
-        Promise.all(issueCommentDataPromises[i])
-          .then(function(issueCommentData){
-            issueCommentData = issueCommentData.flat();
-            issueCommentData = github.parseComments(issueCommentData);
-            sortContributions(issueCommentData, 'contributions');
-            github.apiData[i].issueComments.data = issueCommentData;
-          })
-          .catch(function(e){
-            console.log(e);
-        })
-      );
-    })(i);
+    let issueCommentData = issueCommentDataPromises[i];
+    issueCommentData = issueCommentData.flat();
+    issueCommentData = parseComments(issueCommentData);
+    sortContributions(issueCommentData, 'contributions');
+    github.apiData[i].issueComments.data = issueCommentData;
   }
 
-  Promise.all(finishedCommentsPromises)
-    .then(function(finishedPromises){
-      fs.writeFileSync('github-data.json', JSON.stringify(github.apiData, null, 2));
-    })
-    .catch(function(e){
-      console.log(e);
-    });
+  fs.writeFileSync('github-data.json', JSON.stringify(github.apiData, null, 2));
 }
 
 let token = process.env.token;
@@ -238,6 +172,48 @@ async function initializeIssueCommentsField(github){
       return array.indexOf(link) == index;
     });
   }
+}
+
+function parseComments(comments){
+  let commenters = {};
+  for(comment of comments){
+    let { user } = comment;
+    if(user.user_id in commenters){
+      commenters[user.user_id].contributions+= 1 
+    }
+    else{
+      commenters[user.user_id] = {
+        'contributions': 1,
+        'id': user.user_id,
+        'github_url': user.html_url,
+        'avatar_url': user.user_avatar_url,
+        'gravatar_id': user.gravatar_id
+      }
+    }
+  }
+
+  // Build an array from the commenters data
+  let commentersArray = [];
+  for(commenter in commenters){
+    let commenterObj = {
+      "contributions": commenters[commenter].contributions,
+      "id": commenters[commenter].id,
+      "github_url": commenters[commenter].github_url,
+      "avatar_url": commenters[commenter].avatar_url,
+      "gravatar_id": commenters[commenter].gravatar_id
+    }
+    commentersArray.push(commenterObj);
+  }
+  commentersArray.sort(function(a, b){
+    if(a.contributions < b.contributions){
+      return 1;
+    }
+    else if (a.contributions > b.contributions){
+      return -1;
+    }
+    return 0;
+  });
+  return commentersArray;
 }
 
 function sortContributions(users, criteria){
