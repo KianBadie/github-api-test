@@ -175,13 +175,10 @@ var github = {
       console.log(err.message);
     });
   },
-  getRecentIssueComments: function(url) {
-    // Get date 24 hours ago
-    let date = new Date();
-    date.setDate(date.getDate() - 1);
+  getRecentIssueComments: function(url, dateLastRan) {
     return request({
       "method": "GET",
-      "uri": `${url}?since=${date.toISOString()}`,
+      "uri": `${url}?since=${dateLastRan.toISOString()}`,
       "json": true,
       "headers": {
         "Authorization": "token " + github.token,
@@ -208,10 +205,11 @@ var github = {
 
 let ldone = false;
 let cdone = false;
-let cmdone = false;
+let dateRan = new Date();
 
 async function main(params) {
   console.log('In the async function main');
+
   github.token = params.token;
   github.agent = params.agent;
 
@@ -222,6 +220,7 @@ async function main(params) {
 
   getLanguageData(github);
   getContributorData(github);
+
 }
 
 let token = process.env.token;
@@ -256,8 +255,9 @@ function getLanguageData(github){
       for (i = 0; i < ls.length; i++) {
         github.apiData[i].languages.data = ls[i]
       }
+      console.log('Language data fetched.');
       ldone = true;
-      if (cdone && cmdone) {
+      if (cdone) {
         console.log('Calling finish in languages work');
         finish();
       }
@@ -276,6 +276,12 @@ async function getContributorData(github){
   Promise.all([commitContributorsWork, commentersContributorsWork])
     .then(function(){
       threadCommitsComments();
+      console.log('Commit and commenter data combined.');
+      cdone = true;
+      if(ldone){
+        console.log('Calling finish in contributors work');
+        finish();
+      }
     })
     .catch(function(e){
       console.log(e);
@@ -308,11 +314,7 @@ function getCommitContributorsData(github){
   }
   return Promise.all(contributorsDataPromises)
     .then(function(contributorsData){
-      cdone = true;
-      if (ldone && cmdone) {
-        console.log('Calling finish in Contributors work');
-        finish();
-      }
+      console.log('Commit data fetched.');
     })
     .catch(function(e){
       console.log(e.message);
@@ -321,22 +323,28 @@ function getCommitContributorsData(github){
 }
 
 function getCommenterContributorsData(github){
+  let { oldGitHubData, dateLastRan } = getLocalData();
+  console.log(`Fetching comments since ${dateLastRan.toString()}`);
   let cmps = [];
   for (i = 0; i < github.apiData.length; i++) {
     let contributorData = [];
     for(link of github.apiData[i].issueComments.url){
-      contributorData.push(github.getRecentIssueComments(link));
+      contributorData.push(github.getRecentIssueComments(link, dateLastRan));
     }
     cmps.push(contributorData);
   }
 
   let commenterDataPromises = [];
-  let oldGitHubData = getLocalData();
+  console.log('Incoming comments:');
   for(i = 0; i < cmps.length; i++){
     (function(i, oldGitHubData){
       let commenterDataPromise = Promise.all(cmps[i])
         .then(function(cm){
           let commenters = cm.flat();
+
+          console.log(github.apiData[i].name);
+          console.log(commenters);
+
           // Get old comments data. Not using index i because what if the new data has a
           // different amount of projects than the old data
           let oldDataIndex = -1;
@@ -361,11 +369,7 @@ function getCommenterContributorsData(github){
   }
   return Promise.all(commenterDataPromises)
     .then(function(commenterData){
-      cmdone = true;
-      if (ldone && cdone) {
-        console.log('Calling finish in Commenters work');
-        finish();
-      }
+      console.log('Commenter data fetched.');
     })
     .catch(function(e){
       console.log(e.message);
@@ -375,7 +379,11 @@ function getCommenterContributorsData(github){
 
 function getLocalData(){
   let data = fs.readFileSync('github-data.json', 'utf8');
-  return JSON.parse(data);
+  data = JSON.parse(data);
+  if(Date.parse(data[0]) > 0){
+    return { oldGitHubData: data.slice(1), dateLastRan: new Date(data[0]) }
+  }
+  throw "No valid date value found for when script last ran.";
 }
 
 function condenseContributorsList(contributors){
@@ -437,7 +445,6 @@ function threadCommitsComments(){
       data: contributorsData
     };
   }
-  finish();
 }
 
 // Deep copy function I got from a medium article
@@ -463,6 +470,7 @@ const deepCopyFunction = (inObject) => {
 
 function finish(){
   let output = github.apiData.sort(github.compareValues('id'));
+  output.unshift(dateRan.toString());
   // console.log(JSON.stringify(output, null, 2));
   fs.writeFileSync('github-data.json', JSON.stringify(output, null, 2));
 }

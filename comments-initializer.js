@@ -145,6 +145,9 @@ async function main(params) {
     github.apiData[i].issueComments.data = issueCommentData;
   }
 
+
+  let dateRan = new Date();
+  github.apiData.unshift(dateRan.toString());
   fs.writeFileSync('github-data.json', JSON.stringify(github.apiData, null, 2));
 }
 
