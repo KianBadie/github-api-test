@@ -58,7 +58,7 @@ var github = {
             languages: { url: body.languages_url, data: [] },
             contributors: { url: [body.contributors_url], data: [] },
             repoEndpoint: body.url,
-            issueComments: {url: [project.issue_comment_url.substring(0, project.issue_comment_url.length-9)], data: []}
+            issueComments: {url: [body.issue_comment_url.substring(0, body.issue_comment_url.length-9)], data: []}
           });
         }).catch(function(err){
           throw err;
@@ -96,15 +96,18 @@ var github = {
     }).then(function(body) {
       // return a list of contributors sorted by number of commits
       let contributors = [];
-      body.forEach(function(user) {
-        contributors.push({
-          "id": user.id,
-          "github_url": user.html_url,
-          "avatar_url": user.avatar_url,
-          "gravatar_id": user.gravatar_id,
-          "contributions": user.contributions
+      // body will be undefined if repo is an empty repo (no contributors)
+      if(body){
+        body.forEach(function(user) {
+          contributors.push({
+            "id": user.id,
+            "github_url": user.html_url,
+            "avatar_url": user.avatar_url,
+            "gravatar_id": user.gravatar_id,
+            "contributions": user.contributions
+          });
         });
-      });
+      }
       return Promise.resolve(contributors);
     }).catch(function(err) {
         throw err;
@@ -188,6 +191,7 @@ var github = {
       // return a list of commenters
       let commenters = [];
       body.forEach(function(comment) {
+        if(comment.created_at != comment.updated_at) return;
         commenters.push({
           "id": comment.user.id,
           "github_url": comment.user.html_url,
@@ -340,6 +344,8 @@ function getCommenterContributorsData(github){
       let commenterDataPromise = Promise.all(cmps[i])
         .then(function(cm){
           let commenters = cm.flat();
+          console.log(`Comments from ${github.apiData[i].name}:`);
+          console.log(commenters);
           // Get old comments data. Not using index i because what if the new data has a
           // different amount of projects than the old data
           let oldDataIndex = -1;
