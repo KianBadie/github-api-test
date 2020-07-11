@@ -335,16 +335,11 @@ function getCommenterContributorsData(github){
   }
 
   let commenterDataPromises = [];
-  console.log('Incoming comments:');
   for(i = 0; i < cmps.length; i++){
     (function(i, oldGitHubData){
       let commenterDataPromise = Promise.all(cmps[i])
         .then(function(cm){
           let commenters = cm.flat();
-
-          console.log(github.apiData[i].name);
-          console.log(commenters);
-
           // Get old comments data. Not using index i because what if the new data has a
           // different amount of projects than the old data
           let oldDataIndex = -1;
