@@ -39,7 +39,7 @@ var github = {
         }
         return comments;
       }).catch(function(err) {
-          return err.message;
+          throw err;
       });
   },
   getCommentsHelper: function(url){
@@ -72,7 +72,7 @@ var github = {
       }
       return Promise.resolve(result);
     }).catch(function(err){
-      return err.message;
+      throw err;
     });
   },
   getOrgLinks: function(url) {
@@ -89,7 +89,7 @@ var github = {
       if(!body.organization || body.organization.login == 'hackforla') return {"repos": [], "issueCommentsUrls": [body.issue_comment_url.substring(0, body.issue_comment_url.length-9)]};
       return github.getOrgLinksHelper(body.organization.repos_url);
     }).catch(function(err) {
-      return err.message;
+      throw err;
     });
   },
   getOrgLinksHelper: function(url) {
@@ -114,7 +114,7 @@ var github = {
         "issueCommentsUrls": issueCommentUrls
       }
     }).catch(function(err) {
-      console.log(err.message);
+      throw err;
     });
   }
 }

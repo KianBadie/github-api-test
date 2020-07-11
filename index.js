@@ -191,7 +191,7 @@ var github = {
       // return a list of commenters
       let commenters = [];
       body.forEach(function(comment) {
-        if(comment.created_at != comment.updated_at) return;
+        // if(comment.created_at != comment.updated_at) return;
         commenters.push({
           "id": comment.user.id,
           "github_url": comment.user.html_url,

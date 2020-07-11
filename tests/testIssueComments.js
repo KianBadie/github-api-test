@@ -1,6 +1,8 @@
 const environment = require('dotenv').config();
 const axios = require('axios');
 const querystring = require('querystring');
+const _ = require('lodash');
+const fs = require('fs');
 
 const token = process.env.token;
 const org = process.env.org;
@@ -15,7 +17,18 @@ const config = {
 async function main(){
     let commentsData = await getAllIssueCommentsFromOrg(org);
     // let commentsData = await getAllIssueCommentsFromRepo(repoId);
-    console.log(commentsData);
+    let dataToTest = getDataToTest(repoId);
+    if(compareCommentDataSets(commentsData, dataToTest)){
+        console.log('Data sets ARE equal');
+    } else {
+        console.log('Data sets NOT equal');
+    }
+    if(compareCommentDataSets(x, y)){
+        console.log('Data sets ARE equal');
+    } else {
+        console.log('Data sets NOT equal');
+    }
+
 }
 
 async function getAllIssueCommentsFromOrg(org){
@@ -33,13 +46,15 @@ async function getAllIssueCommentsFromOrg(org){
 
     let commentsDictionary = {};
     for(contributor of allCommentContributions){
-        if(commentsDictionary.hasOwnProperty(contributor.userId)){
-            commentsDictionary[contributor.userId].contributions += contributor.contributions;
+        if(commentsDictionary.hasOwnProperty(contributor.id)){
+            commentsDictionary[contributor.id].contributions += contributor.contributions;
         } else {
-            commentsDictionary[contributor.userId] = {
+            commentsDictionary[contributor.id] = {
+                id: contributor.id,
+                github_url: contributor.github_url,
+                avatar_url: contributor.avatar_url,
+                gravatar_id: contributor.gravatar_id,
                 contributions: contributor.contributions,
-                userId: contributor.userId,
-                userLogin: contributor.userLogin
             };
         }
     }
@@ -88,9 +103,11 @@ async function getAllIssueCommentsFromRepo(repoId){
             commentsDictionary[user.id].contributions++;
         } else {
             commentsDictionary[user.id] = {
+                id: user.id,
+                github_url: user.html_url,
+                avatar_url: user.avatar_url,
+                gravatar_id: user.gravatar_id,
                 contributions: 1,
-                userId: user.id,
-                userLogin: user.login
             };
         }
     }
@@ -110,6 +127,30 @@ async function getAllIssueCommentsFromRepo(repoId){
     });
 
     return aggregateData;
+}
+
+function getDataToTest(repoId){
+    let dataStringified = fs.readFileSync('./github-data.json', 'utf8');
+    let data = JSON.parse(dataStringified);
+    for(i = 1; i < data.length; i++){
+        if(data[i].id == repoId){
+            return data[i].issueComments.data;
+        }
+    }
+}
+
+function compareCommentDataSets(data1, data2){
+    if(data1.length != data2.length){
+        return false;
+    }
+    for(i = 0; i < data1.length; i++){
+        if(!_.isEqual(data1[i], data2[i])){
+            console.log(data1[i]);
+            console.log(data2[i]);
+            return false;
+        }
+    }
+    return true;
 }
 
 main();
