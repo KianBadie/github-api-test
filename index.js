@@ -29,7 +29,7 @@ var github = {
         });
       });
     }).catch(function(err) {
-      return err.message;
+      throw err;
     });
   },
   getUntaggedRepos: function(ids) {
@@ -49,7 +49,7 @@ var github = {
           "json": true,
           "headers": {
             "Authorization": "token " + github.token,
-            "User-Agent": github.agent
+            "User-Agent":github.agent
           }
         }).then(function(body){
           github.apiData.push({
@@ -58,10 +58,10 @@ var github = {
             languages: { url: body.languages_url, data: [] },
             contributors: { url: [body.contributors_url], data: [] },
             repoEndpoint: body.url,
-            issueComments: {url: project.issue_comment_url.substring(0, project.issue_comment_url.length-9), data: []}
+            issueComments: {url: [project.issue_comment_url.substring(0, project.issue_comment_url.length-9)], data: []}
           });
         }).catch(function(err){
-          return err.message;
+          throw err;
         })
       );
       return Promise.all(extraRepos);
@@ -81,7 +81,7 @@ var github = {
       // We care about the order of the names but not the number of lines of code.
       return Promise.resolve(Object.keys(body));
     }).catch(function(err) {
-      return err.message;
+        throw err;
     });
   },
   getContributorsInfo: function(url) {
@@ -107,7 +107,7 @@ var github = {
       });
       return Promise.resolve(contributors);
     }).catch(function(err) {
-      return err.message;
+        throw err;
     });
   },
   compareValues: function(key, order = 'asc') {
@@ -147,7 +147,7 @@ var github = {
       if(!body.organization || body.organization.login == 'hackforla') return {"repos": [], "issueCommentsUrls": []};
       return github.getOrgLinksHelper(body.organization.repos_url);
     }).catch(function(err) {
-      return err.message;
+      throw err;
     });
   },
   getOrgLinksHelper: function(url) {
@@ -157,7 +157,7 @@ var github = {
       "uri": url,
       "json": true,
       "headers": {
-        "Authorization": "token" + github.token,
+        "Authorization": "token " + github.token,
         "User-Agent": github.agent
       }
     }).then(function(body) {
@@ -172,7 +172,7 @@ var github = {
         "issueCommentsUrls": issueCommentUrls
       }
     }).catch(function(err) {
-      console.log(err.message);
+      throw err;
     });
   },
   getRecentIssueComments: function(url, dateLastRan) {
@@ -198,7 +198,7 @@ var github = {
       });
       return Promise.resolve(commenters);
     }).catch(function(err) {
-      return err.message;
+        throw err;
     });
   }
 }
@@ -262,8 +262,8 @@ function getLanguageData(github){
         finish();
       }
     })
-    .catch(function(e) {
-      console.log(e)
+    .catch(function(err) {
+      throw err;
     }
   );  
 }
@@ -283,8 +283,8 @@ async function getContributorData(github){
         finish();
       }
     })
-    .catch(function(e){
-      console.log(e);
+    .catch(function(err){
+      throw err;
     });
 }
 
@@ -307,7 +307,7 @@ function getCommitContributorsData(github){
           contributors = condenseContributorsList(contributors);
           github.apiData[i].contributors.data = contributors;
         }).catch(function(err) {
-          console.log(err.message);
+          throw err;
         });
       contributorsDataPromises.push(contributorsDataPromise);
     })(i);
@@ -316,8 +316,8 @@ function getCommitContributorsData(github){
     .then(function(contributorsData){
       console.log('Commit data fetched.');
     })
-    .catch(function(e){
-      console.log(e.message);
+    .catch(function(err){
+      throw err;
     }
   );
 }
@@ -356,8 +356,8 @@ function getCommenterContributorsData(github){
           commenters = condenseContributorsList(commenters);
           github.apiData[i].issueComments.data = commenters;
         })
-        .catch(function(e){
-          console.log(e);
+        .catch(function(err){
+          throw err;
         });
       commenterDataPromises.push(commenterDataPromise);
     })(i, oldGitHubData);
@@ -366,8 +366,8 @@ function getCommenterContributorsData(github){
     .then(function(commenterData){
       console.log('Commenter data fetched.');
     })
-    .catch(function(e){
-      console.log(e.message);
+    .catch(function(err){
+      throw err;
     }
   );
 }
