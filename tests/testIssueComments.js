@@ -15,20 +15,10 @@ const config = {
 };
 
 async function main(){
-    let commentsData = await getAllIssueCommentsFromOrg(org);
-    // let commentsData = await getAllIssueCommentsFromRepo(repoId);
+    // let commentsData = await getAllIssueCommentsFromOrg(org);
+    let commentsData = await getAllIssueCommentsFromRepo(repoId);
     let dataToTest = getDataToTest(repoId);
-    if(compareCommentDataSets(commentsData, dataToTest)){
-        console.log('Data sets ARE equal');
-    } else {
-        console.log('Data sets NOT equal');
-    }
-    if(compareCommentDataSets(x, y)){
-        console.log('Data sets ARE equal');
-    } else {
-        console.log('Data sets NOT equal');
-    }
-
+    await compareCommentDataSets(commentsData, dataToTest);
 }
 
 async function getAllIssueCommentsFromOrg(org){
@@ -139,18 +129,21 @@ function getDataToTest(repoId){
     }
 }
 
-function compareCommentDataSets(data1, data2){
+async function compareCommentDataSets(data1, data2){
+    console.log('Comparing data sets');
     if(data1.length != data2.length){
-        return false;
+        console.log('Data sets are not the same length');
+        return
     }
     for(i = 0; i < data1.length; i++){
         if(!_.isEqual(data1[i], data2[i])){
+            console.log('Difference in data:\ndata1=');
             console.log(data1[i]);
+            console.log('data2=');
             console.log(data2[i]);
-            return false;
+            console.log();
         }
     }
-    return true;
 }
 
 main();

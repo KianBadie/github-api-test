@@ -1,0 +1,38 @@
+Testing notes:
+-script = data fetched from index.js
+-test = date fetched from testing script
+
+
+
+////This data set was on 7-12 and succeeded another completed set from 7-11 which I think was from a 7-9 initializer set  
+Hack for LA website
+- using the 7-11 initializer backup, the script had 1 more reported comment for Harish than the test. Upon further inspection, it looks like this 1+ stemmed from the initializer itself (it was there on the 7-9 backup). I ran the initializer on 7-12 and the 2 data sets are now equal, so I am assuming a comment from Harish was deleted since then.
+- Alexandra 66918724 had 1 more comment in the script than testing, but within the past day she also edited a comment from 7-05, so that does add up. 
+
+civictechindex
+- there were no differences in the data set.
+
+public-tree-map
+- emillipede had 1 more comment in script. but using the knowledge from the public-tree-map test below (this was done after), I'm assuming that updated comment was recorded in the last completed set so it didn't show up now
+
+food-oasis
+- like the test below (this was also done after) there were 4 differences.
+- I'm assuming the script picked up tina-moh's comment in the last iteration because it didn't show up here. It was updated on the 10th
+- 
+
+
+////This data set will be built upon from the 7-9 initializer set
+Hack for LA website
+- same notes from the previous test. Harish and Alexandra had 1 more comment than the testing just like the previous test
+
+civictechindex
+-no differences
+
+public-tree-map
+-there was only 1 incoming comment even though there are like 4 repos
+-emillipede had 1 more comment in the script. This adds up because the one comment that came in was an update from a comment on 7-09.
+
+food-oasis
+-there were 4 differences in data, but they look like the results from an ordering difference that resulted from a change in contribution count
+-tina-moh has 1 more comment in script, which checks out because she did update a comment from 7-08
+- timmal, jp, and lvl3jose were all in different orders because of some updated comments. after doing the work on paper, it added up.

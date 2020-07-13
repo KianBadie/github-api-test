@@ -181,7 +181,7 @@ var github = {
   getRecentIssueComments: function(url, dateLastRan) {
     return request({
       "method": "GET",
-      "uri": `${url}?since=${dateLastRan.toISOString()}`,
+      "uri": `${url}?per_page=100&since=${dateLastRan.toISOString()}`,
       "json": true,
       "headers": {
         "Authorization": "token " + github.token,
@@ -197,7 +197,10 @@ var github = {
           "github_url": comment.user.html_url,
           "avatar_url": comment.user.avatar_url,
           "gravatar_id": comment.user.gravatar_id,
-          "contributions": 1
+          "contributions": 1,
+          "html_url": comment.html_url,
+          "created_at": comment.created_at,
+          "updated_at": comment.updated_at
         });
       });
       return Promise.resolve(commenters);
