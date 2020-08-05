@@ -3,6 +3,10 @@ const _ = require('lodash');
 
 class GitHubUtil {
 
+    /**
+     * Constructs a GitHubUtil object with a given api token.
+     * @param  {String} apiToken        [Api token of given GitHub API app]
+     */
     constructor(apiToken){
         this.config = {
             headers: {
@@ -19,7 +23,7 @@ class GitHubUtil {
      */
     async fetchAllSync(requestUrl, parameters={}) {
         // Construct request url with given parameters
-        requestUrl = parameters ? `${requestUrl}?`: requestUrl;
+        requestUrl = !(_.isEmpty(parameters)) ? `${requestUrl}?`: requestUrl;
         for(let parameter in parameters){
             requestUrl = requestUrl.concat(`${parameter}=${parameters[parameter]}&`);
         }
@@ -39,7 +43,7 @@ class GitHubUtil {
             link = link.substring(1, link.length - 1);
             if(rel == 'rel="next"'){
                 // Make recursive call to same method to get next page of comments
-                return res.data.concat(await this.getIssueCommentsSync(link));
+                return res.data.concat(await this.fetchAllSync(link));
             }
         }
         return res.data;
@@ -48,25 +52,34 @@ class GitHubUtil {
     /**
      * Method to make search repositories with given keywords, qualifiers, and parameters
      * @param  {Array} searchKeywords   [Keywords to include in request]
-     * @param  {Array} qualifiers       [Array of qualifiers objects of type {qualifier: value}]
+     * @param  {Array} qualifiers       [Dictionary of qualifiers to be conducted in search]
      * @param  {Object} parameters      [Dictionary of parameters to be included in API request]
      * @return {Object}                 [Object of {total_count, incomplete_results, items} where items is the data being requested]
      */
-    async searchRepositories({ searchKeywords=[], qualifiers=[], parameters={} } = {}){
+    async searchRepositoriesSync({ searchKeywords=[], qualifiers={}, parameters={} } = {}){
         let endpoint = 'https://api.github.com/search/repositories';
         // Construct query parameter for request url
         let q = '';
         for(let keyword of searchKeywords){
             q = q.concat(`${keyword}+`);
         }
-        for(let qualifier of qualifiers){
-            let [ qualifierName ] = Object.keys(qualifier);
-            q = q.concat(`${qualifierName}:${qualifier[qualifierName]}+`);
+        for(let qualifier in qualifiers){
+            q = q.concat(`${qualifier}:${qualifiers[qualifier]}+`);
         }
         // Add query parameter to parameters object after creating a deep copy of it
         let parametersCopy = _.clone(parameters);
         parametersCopy.q = q;
         return await this.fetchAllSync(endpoint, parametersCopy);
+    }
+
+    /**
+     * Method to fetch a repository by its id
+     * @param  {Integer} repoId         [The integer id of the repository]
+     * @return {Object}                 [Data object representing repository with id repoId]
+     */
+    async getRepoByIdSync(repoId) {
+        let endpoint = `https://api.github.com/repositories/${repoId}`;
+        return await this.fetchAllSync(endpoint);
     }
 }
 
